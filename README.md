@@ -103,6 +103,11 @@ No useQuery. No fetch. No codegen. The type of post is exact — inferred from t
 
 ---
 
+## Examples
+
+- [Next.js App Router](./examples/nextjs-app-router)
+- [TanStack Start routes](./examples/tanstack-start-routes)
+
 ## Scope
 
 v1 is reads-only, RSC-compatible, and runtime-agnostic.
