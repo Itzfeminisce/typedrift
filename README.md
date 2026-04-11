@@ -109,8 +109,7 @@ v1 is reads-only, RSC-compatible, and runtime-agnostic.
 
 Out of scope: mutations, subscriptions, pagination/filtering in views, client-side caching.
 
-Read the full spec:  
-[https://github.com/Itzfeminisce/typedrift/docs/v1-spec.md](https://github.com/Itzfeminisce/typedrift/docs/v1-spec.md)
+[./docs/v1-spec.md](Read the full spec.)
 ---
 
 ## License
