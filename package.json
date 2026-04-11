@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "A React data library that derives server queries from component data types and passes typed props to components automatically.",
   "type": "module",
+  "repository": {
+    "url": "https://github.com/Itzfeminisce/typedrift.git"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
