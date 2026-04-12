@@ -1,94 +1,103 @@
-// ─── Registry ─────────────────────────────────────────────────────────────────
-//
-// The registry maps model names to their root and relation resolvers.
-// It owns nothing about React, RSC, or HTTP — it is a pure data structure
-// that the binder executes against.
+// ─── Registry — v0.3.0 ───────────────────────────────────────────────────────
 
 import type {
-  SelectionTree,
-  ResolverContext,
   AnyEntity,
+  RootResolverMeta,
+  RelationResolverMeta,
+  ResolverContext,
 } from "../types/index.js"
 import type { AnyModelDescriptor } from "../field/index.js"
 
 // ── Resolver types ────────────────────────────────────────────────────────────
 
-/**
- * Root resolver — fetches a single root record given an input.
- * Returns the raw internal entity or null.
- */
-export type RootResolver<
-  TInput,
-  TEntity extends AnyEntity,
-  TServices,
-> = (
+export type RootResolver<TInput, TEntity, TServices, TSession = undefined> = (
   input: TInput,
-  ctx: ResolverContext<TServices>,
-  meta: { selection: SelectionTree },
+  ctx:   ResolverContext<TServices, TSession>,
+  meta:  RootResolverMeta,
 ) => Promise<TEntity | null>
 
-/**
- * Relation resolver — batched (dataloader-style).
- * Receives an array of parent entities and must return a Map
- * keyed by parent entity id.
- */
-export type RelationResolver<
-  TParent extends AnyEntity,
-  TValue,
-  TServices,
-> = (
+export type RelationResolver<TParent extends AnyEntity, TValue, TServices, TSession = undefined> = (
   parents: TParent[],
-  ctx: ResolverContext<TServices>,
-  meta: { selection: SelectionTree },
+  ctx:     ResolverContext<TServices, TSession>,
+  meta:    RelationResolverMeta,
 ) => Promise<Map<string, TValue>>
 
 // ── ModelRegistration ─────────────────────────────────────────────────────────
 
-export type ModelRegistration<TServices> = {
-  root?: RootResolver<any, AnyEntity, TServices>
-  relations: Record<string, RelationResolver<AnyEntity, unknown, TServices>>
+export type ModelRegistration<TServices, TSession = undefined> = {
+  root?:       RootResolver<any, AnyEntity, TServices, TSession>
+  relations:   Record<string, RelationResolver<AnyEntity, unknown, TServices, TSession>>
+  _relationFKs?: Record<string, string>
 }
+
+export type ScopeFn<TServices, TSession = undefined> = (
+  ctx: ResolverContext<TServices, TSession>,
+) => Record<string, unknown>
 
 // ── Registry ──────────────────────────────────────────────────────────────────
 
-export type Registry<TServices> = {
+export type Registry<TServices, TSession = undefined> = {
   register(
-    model: AnyModelDescriptor,
-    registration: ModelRegistration<TServices>,
+    model:        AnyModelDescriptor,
+    registration: ModelRegistration<TServices, TSession>,
   ): void
-  /**
-   * Internal: look up a model's registration by name.
-   * Used by the binder during execution.
-   */
-  _get(modelName: string): ModelRegistration<TServices> | undefined
-  /**
-   * Internal: check if a root resolver exists for a model.
-   */
-  _hasRoot(modelName: string): boolean
+
+  scope(
+    model:   AnyModelDescriptor,
+    scopeFn: ScopeFn<TServices, TSession>,
+  ): void
+
+  validate(): void
+
+  _get(modelName: string):      ModelRegistration<TServices, TSession> | undefined
+  _hasRoot(modelName: string):  boolean
+  _getScope(modelName: string): ScopeFn<TServices, TSession> | undefined
+  _getRequiredFields(modelName: string): Set<string>
 }
 
 // ── createRegistry ────────────────────────────────────────────────────────────
 
-export function createRegistry<TServices>(): Registry<TServices> {
-  const registrations = new Map<string, ModelRegistration<TServices>>()
+export function createRegistry<TServices, TSession = undefined>(): Registry<TServices, TSession> {
+  const registrations = new Map<string, ModelRegistration<TServices, TSession>>()
+  const scopes        = new Map<string, ScopeFn<TServices, TSession>>()
 
   return {
     register(model, registration) {
       if (registrations.has(model.name)) {
         throw new Error(
-          `[typedrift] model "${model.name}" is already registered. ` +
-          `Each model may only be registered once.`
+          `[typedrift] model "${model.name}" is already registered.`
         )
       }
       registrations.set(model.name, registration)
     },
 
-    _get(modelName) {
-      return registrations.get(modelName)
+    scope(model, scopeFn) {
+      scopes.set(model.name, scopeFn)
     },
 
-    _hasRoot(modelName) {
-      return registrations.get(modelName)?.root !== undefined
+    validate() {
+      const issues: string[] = []
+      for (const [modelName, reg] of registrations) {
+        for (const relationKey of Object.keys(reg.relations)) {
+          if (typeof reg.relations[relationKey] !== "function") {
+            issues.push(`  ${modelName}.${relationKey} — resolver is not a function`)
+          }
+        }
+      }
+      if (issues.length > 0) {
+        throw new Error(
+          `[typedrift] Registry validation failed:\n${issues.join("\n")}`
+        )
+      }
+    },
+
+    _get(modelName)          { return registrations.get(modelName) },
+    _hasRoot(modelName)      { return registrations.get(modelName)?.root !== undefined },
+    _getScope(modelName)     { return scopes.get(modelName) },
+    _getRequiredFields(modelName) {
+      const reg = registrations.get(modelName)
+      if (!reg?._relationFKs) return new Set()
+      return new Set(Object.values(reg._relationFKs))
     },
   }
 }

@@ -1,33 +1,13 @@
-// ─── Model ────────────────────────────────────────────────────────────────────
+// ─── Model — v0.2.0 ──────────────────────────────────────────────────────────
 
-import {
-  type AnyFieldDescriptor,
-  type ScalarDescriptor,
-  type RelationDescriptor,
-  type ScalarKind,
-  type RelationCardinality,
-  type AnyModelDescriptor,
-  isScalarDescriptor,
-  isRelationDescriptor,
+import type {
+  AnyFieldDescriptor,
+  ScalarDescriptor,
+  RelationDescriptor,
+  AnyModelDescriptor,
 } from "../field/index.js"
+import type { QueryArgDefs } from "../types/index.js"
 import { createView } from "../view/index.js"
-
-// ── Field shape inference ─────────────────────────────────────────────────────
-
-type ScalarShape<TKind extends ScalarKind, TNullable extends boolean> =
-  TNullable extends true
-    ? (TKind extends "id"      ? string  :
-       TKind extends "string"  ? string  :
-       TKind extends "number"  ? number  :
-       TKind extends "boolean" ? boolean :
-       TKind extends "date"    ? Date    :
-       never) | null
-    : (TKind extends "id"      ? string  :
-       TKind extends "string"  ? string  :
-       TKind extends "number"  ? number  :
-       TKind extends "boolean" ? boolean :
-       TKind extends "date"    ? Date    :
-       never)
 
 export type ModelFields = Record<string, AnyFieldDescriptor>
 
@@ -46,10 +26,11 @@ export type ModelDescriptor<
   TFields extends ModelFields,
 > = {
   readonly __type: "model"
-  readonly name: TName
+  readonly name:   TName
   readonly fields: TFields
   view<TSelection extends ViewSelection<TFields>>(
-    selection: TSelection,
+    selection:    TSelection,
+    queryArgDefs?: QueryArgDefs,
   ): import("../view/index.js").ViewDescriptor<ModelDescriptor<TName, TFields>, TSelection>
 }
 
@@ -57,7 +38,7 @@ export function model<
   TName extends string,
   TFields extends ModelFields,
 >(
-  name: TName,
+  name:   TName,
   fields: TFields,
 ): ModelDescriptor<TName, TFields> {
   if (!("id" in fields)) {
@@ -71,8 +52,8 @@ export function model<
     __type: "model",
     name,
     fields,
-    view(selection) {
-      return createView(descriptor as any, selection) as any
+    view(selection, queryArgDefs) {
+      return createView(descriptor as any, selection, queryArgDefs) as any
     },
   }
 

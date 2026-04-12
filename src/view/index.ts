@@ -1,17 +1,12 @@
-// ─── View ─────────────────────────────────────────────────────────────────────
-//
-// A view is the single read contract that drives both:
-//   1. the TypeScript prop type the component receives
-//   2. the selection tree the registry uses to execute resolvers
+// ─── View — v0.2.0 ───────────────────────────────────────────────────────────
 
-import type { SelectionTree, BindContext } from "../types/index.js"
+import type { SelectionTree, BindContext, QueryArgDefs, ListResult } from "../types/index.js"
 import type { ModelFields, ViewSelection } from "../model/index.js"
 import type {
   AnyModelDescriptor,
   ScalarDescriptor,
   RelationDescriptor,
   ScalarKind,
-  RelationCardinality,
   AnyFieldDescriptor,
 } from "../field/index.js"
 import { isScalarDescriptor, isRelationDescriptor } from "../field/index.js"
@@ -68,13 +63,19 @@ export type BoundViewDescriptor<
   TSelection extends ViewSelection<TModel["fields"]>,
   TShape,
   TNullable extends boolean = false,
+  TIsList extends boolean = false,
 > = {
-  readonly __type: "bound-view"
-  readonly view: ViewDescriptor<TModel, TSelection>
-  readonly from: FromResolver<Record<string, unknown>>
-  readonly _nullable: TNullable
-  nullable(): BoundViewDescriptor<TModel, TSelection, TShape, true>
-  readonly shape: TNullable extends true ? TShape | null : TShape
+  readonly __type:     "bound-view"
+  readonly view:       ViewDescriptor<TModel, TSelection>
+  readonly from:       FromResolver<Record<string, unknown>>
+  readonly _nullable:  TNullable
+  readonly _isList:    TIsList
+  nullable(): BoundViewDescriptor<TModel, TSelection, TShape, true, TIsList>
+  readonly shape: TIsList extends true
+    ? ListResult<TShape>
+    : TNullable extends true
+      ? TShape | null
+      : TShape
 }
 
 // ── ViewDescriptor ────────────────────────────────────────────────────────────
@@ -83,31 +84,60 @@ export type ViewDescriptor<
   TModel extends AnyModelDescriptor,
   TSelection extends ViewSelection<TModel["fields"]>,
 > = {
-  readonly __type: "view"
-  readonly model: TModel
-  readonly selection: TSelection
-  readonly shape: InferSelectionShape<TModel["fields"] & ModelFields, TSelection>
+  readonly __type:       "view"
+  readonly model:        TModel
+  readonly selection:    TSelection
+  readonly queryArgDefs: QueryArgDefs | null
   readonly selectionTree: SelectionTree
+  readonly shape:        InferSelectionShape<TModel["fields"] & ModelFields, TSelection>
+
+  /**
+   * Mark this view as a list view — changes the resolved shape to
+   * ListResult<T> and signals the root resolver to use list mode.
+   */
+  list(): ListViewDescriptor<TModel, TSelection>
+
   from<TInput extends Record<string, unknown>>(
     resolver: FromResolver<TInput>,
   ): BoundViewDescriptor<
     TModel,
     TSelection,
     InferSelectionShape<TModel["fields"] & ModelFields, TSelection>,
+    false,
     false
+  >
+}
+
+// ── ListViewDescriptor ────────────────────────────────────────────────────────
+
+export type ListViewDescriptor<
+  TModel extends AnyModelDescriptor,
+  TSelection extends ViewSelection<TModel["fields"]>,
+> = {
+  readonly __type:        "list-view"
+  readonly view:          ViewDescriptor<TModel, TSelection>
+  readonly shape:         ListResult<InferSelectionShape<TModel["fields"] & ModelFields, TSelection>>
+
+  from<TInput extends Record<string, unknown>>(
+    resolver: FromResolver<TInput>,
+  ): BoundViewDescriptor<
+    TModel,
+    TSelection,
+    InferSelectionShape<TModel["fields"] & ModelFields, TSelection>,
+    false,
+    true
   >
 }
 
 // ── SelectionTree builder ─────────────────────────────────────────────────────
 
 function buildSelectionTree(
-  fields: ModelFields,
+  fields:    ModelFields,
   selection: Record<string, unknown>,
 ): SelectionTree {
-  const scalars = new Set<string>()
+  const scalars   = new Set<string>()
   const relations = new Map<string, SelectionTree>()
 
-  // Always include id for identity resolution
   scalars.add("id")
 
   for (const [key, value] of Object.entries(selection)) {
@@ -148,37 +178,39 @@ function makeBoundView<
   TSelection extends ViewSelection<TModel["fields"]>,
   TShape,
 >(
-  view: ViewDescriptor<TModel, TSelection>,
-  fromResolver: FromResolver<Record<string, unknown>>,
+  view:      ViewDescriptor<TModel, TSelection>,
+  fromFn:    FromResolver<Record<string, unknown>>,
   _nullable: boolean,
-): BoundViewDescriptor<TModel, TSelection, TShape, any> {
-  const descriptor: BoundViewDescriptor<TModel, TSelection, TShape, any> = {
-    __type: "bound-view",
+  _isList:   boolean,
+): BoundViewDescriptor<TModel, TSelection, TShape, any, any> {
+  return {
+    __type:    "bound-view",
     view,
-    from: fromResolver,
+    from:      fromFn,
     _nullable,
+    _isList,
     nullable() {
-      return makeBoundView(view, fromResolver, true)
+      return makeBoundView(view, fromFn, true, _isList) as any
     },
     get shape(): any {
       throw new Error("[typedrift] .shape is a compile-time type accessor only.")
     },
   }
-  return descriptor
 }
 
-// ── createView ────────────────────────────────────────────────────────────────
+// ── createView — public factory ───────────────────────────────────────────────
 
 export function createView<
   TModel extends AnyModelDescriptor,
   TSelection extends ViewSelection<TModel["fields"]>,
 >(
-  modelDef: TModel,
-  selection: TSelection,
+  modelDef:    TModel,
+  selection:   TSelection,
+  queryArgDefs?: QueryArgDefs | null,
 ): ViewDescriptor<TModel, TSelection> {
   if (Object.keys(selection).length === 0) {
     throw new Error(
-      `[typedrift] ${modelDef.name}.view({}) — empty views are not allowed. Select at least one field.`
+      `[typedrift] ${modelDef.name}.view({}) — empty views are not allowed.`
     )
   }
 
@@ -188,19 +220,43 @@ export function createView<
   )
 
   const descriptor: ViewDescriptor<TModel, TSelection> = {
-    __type: "view",
-    model: modelDef,
+    __type:       "view",
+    model:        modelDef,
     selection,
+    queryArgDefs: queryArgDefs ?? null,
     selectionTree,
     get shape(): any {
       throw new Error("[typedrift] .shape is a compile-time type accessor only.")
     },
+    list() {
+      return makeListView(descriptor)
+    },
     from(resolver) {
-      return makeBoundView(descriptor, resolver as any, false) as any
+      return makeBoundView(descriptor, resolver as any, false, false) as any
     },
   }
 
   return descriptor
+}
+
+// ── ListViewDescriptor factory ────────────────────────────────────────────────
+
+function makeListView<
+  TModel extends AnyModelDescriptor,
+  TSelection extends ViewSelection<TModel["fields"]>,
+>(
+  view: ViewDescriptor<TModel, TSelection>,
+): ListViewDescriptor<TModel, TSelection> {
+  return {
+    __type: "list-view",
+    view,
+    get shape(): any {
+      throw new Error("[typedrift] .shape is a compile-time type accessor only.")
+    },
+    from(resolver) {
+      return makeBoundView(view, resolver as any, false, true) as any
+    },
+  }
 }
 
 // ── Public type utilities ─────────────────────────────────────────────────────
@@ -210,5 +266,5 @@ export type InferViewShape<T extends ViewDescriptor<any, any>> =
     ? InferSelectionShape<TModel["fields"] & ModelFields, TSelection>
     : never
 
-export type InferBoundViewShape<T extends BoundViewDescriptor<any, any, any, any>> =
+export type InferBoundViewShape<T extends BoundViewDescriptor<any, any, any, any, any>> =
   T["shape"]

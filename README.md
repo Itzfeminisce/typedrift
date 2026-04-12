@@ -109,7 +109,6 @@ v1 is reads-only, RSC-compatible, and runtime-agnostic.
 
 Out of scope: mutations, subscriptions, pagination/filtering in views, client-side caching.
 
-[Read the full spec.](./docs/v1-spec.md)
 ---
 
 ## License

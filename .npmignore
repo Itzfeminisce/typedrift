@@ -1,6 +1,6 @@
 src/
 *.test.ts
-tsconfig.json
 tsup.config.ts
+tsconfig.json
 vitest.config.ts
 .gitignore

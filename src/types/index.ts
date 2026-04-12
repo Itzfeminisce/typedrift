@@ -1,49 +1,67 @@
-// ─── Core shared types ────────────────────────────────────────────────────────
+// ─── Core shared types — v0.3.0 ──────────────────────────────────────────────
 
-/**
- * The resolved shape of a selection tree — tells resolvers exactly which
- * fields and relations were requested so they can optimise DB queries.
- */
 export type SelectionTree = {
-  scalars: Set<string>
-  relations: Map<string, SelectionTree>
+  scalars:         Set<string>
+  relations:       Map<string, SelectionTree>
+  queryArgs?:      ResolvedQueryArgs
+  isList?:         boolean
+  requiredFields?: Set<string>
 }
 
-/**
- * Runtime context available in .from() callbacks and raw() sources.
- */
+export type ResolvedQueryArgs = {
+  filter?:   Record<string, unknown>
+  sort?:     { field: string; dir: "asc" | "desc" }
+  paginate?: { page: number; perPage: number }
+}
+
+export type QueryArgDefs = {
+  filter?:   (ctx: BindContext) => Record<string, unknown>
+  sort?:     (ctx: BindContext) => { field: string; dir: "asc" | "desc" }
+  paginate?: (ctx: BindContext) => { page: number; perPage: number }
+}
+
+export type ListResult<T> = {
+  data:    T[]
+  total:   number | null
+  page:    number
+  perPage: number
+}
+
 export type BindContext = {
-  params: Record<string, string | undefined>
+  params:       Record<string, string | undefined>
   searchParams: Record<string, string | string[] | undefined>
-  request?: Request | undefined
-  runtime?: unknown | undefined
+  request?:     Request
+  runtime?:     unknown
 }
 
-/**
- * Context passed into every resolver (root and relation).
- */
-export type ResolverContext<TServices> = {
-  bind: BindContext
+// v0.3.0 — session is now a first-class field on ResolverContext
+export type ResolverContext<TServices, TSession = undefined> = {
+  bind:     BindContext
   services: TServices
+  session:  TSession | undefined
 }
 
-/**
- * Context passed into raw() sources.
- */
-export type RawContext<TServices> = {
-  bind: BindContext
+export type RawContext<TServices, TSession = undefined> = {
+  bind:     BindContext
   services: TServices
+  session:  TSession | undefined
 }
 
-/**
- * Internal entity returned from DB — shape is owned by the resolver,
- * not by Typedrift.
- */
+export type RootResolverMeta = {
+  selection:      SelectionTree
+  isList:         boolean
+  queryArgs:      ResolvedQueryArgs | null
+  scope:          Record<string, unknown> | null
+  requiredFields: Set<string>
+}
+
+export type RelationResolverMeta = {
+  selection: SelectionTree
+  scope:     Record<string, unknown> | null
+}
+
 export type AnyEntity = Record<string, unknown>
 
-/**
- * Utility: remove never-typed keys from an object type.
- */
 export type OmitNever<T> = {
   [K in keyof T as T[K] extends never ? never : K]: T[K]
 }
