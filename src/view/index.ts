@@ -1,6 +1,6 @@
 // ─── View — v0.2.0 ───────────────────────────────────────────────────────────
 
-import type { SelectionTree, BindContext, QueryArgDefs, ListResult } from "../types/index.js"
+import type { SelectionTree, BindContext, QueryArgDefs, ListResult, ViewCacheConfig } from "../types/index.js"
 import type { ModelFields, ViewSelection } from "../model/index.js"
 import type {
   AnyModelDescriptor,
@@ -89,6 +89,7 @@ export type ViewDescriptor<
   readonly selection:    TSelection
   readonly queryArgDefs: QueryArgDefs | null
   readonly selectionTree: SelectionTree
+  readonly cacheConfig:  ViewCacheConfig | false | null
   readonly shape:        InferSelectionShape<TModel["fields"] & ModelFields, TSelection>
 
   /**
@@ -204,9 +205,10 @@ export function createView<
   TModel extends AnyModelDescriptor,
   TSelection extends ViewSelection<TModel["fields"]>,
 >(
-  modelDef:    TModel,
-  selection:   TSelection,
+  modelDef:     TModel,
+  selection:    TSelection,
   queryArgDefs?: QueryArgDefs | null,
+  cacheConfig?:  ViewCacheConfig | false | null,
 ): ViewDescriptor<TModel, TSelection> {
   if (Object.keys(selection).length === 0) {
     throw new Error(
@@ -224,6 +226,7 @@ export function createView<
     model:        modelDef,
     selection,
     queryArgDefs: queryArgDefs ?? null,
+    cacheConfig:  cacheConfig ?? null,
     selectionTree,
     get shape(): any {
       throw new Error("[typedrift] .shape is a compile-time type accessor only.")

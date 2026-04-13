@@ -22,7 +22,9 @@ import type {
 import { runMiddleware }                           from "../middleware/index.js"
 import { isTypedriftError }                        from "../errors/index.js"
 import { executeAction }                           from "../action/index.js"
-import { executeView, relationModelRegistry, makeDedupeCache } from "./executor.js"
+import { executeView, relationModelRegistry, makeDedupeCache, invalidateCacheTags } from "./executor.js"
+import type { CacheConfig }     from "../cache/index.js"
+import type { TypedriftTracer } from "../telemetry/index.js"
 
 // ── RawSource ─────────────────────────────────────────────────────────────────
 
@@ -118,6 +120,9 @@ export type CreateBinderOptions<TServices, TSession = undefined> = {
   getServices:  (ctx: BindContext) => TServices | Promise<TServices>
   getSession?:  (ctx: BindContext) => TSession | undefined | Promise<TSession | undefined>
   middleware?:  Middleware<TSession, TServices>[]
+  // v0.5.0
+  cache?:       CacheConfig
+  tracer?:      TypedriftTracer
 }
 
 export type BindOptions = {
@@ -191,6 +196,9 @@ function normalizeBindContext(props: Record<string, unknown>): BindContext {
 function makeActionCallable<TInput, TResult, TServices, TSession>(
   definition:   ActionDefinition<TInput, TResult, TServices, TSession>,
   resolverCtx:  { bind: BindContext; services: TServices; session: TSession | undefined },
+  mwStack:      Middleware<TSession, TServices>[],
+  actionName:   string,
+  cacheGlobalRef?: CacheConfig,
 ): ActionCallable<TInput, TResult> {
   // State — updated as the action progresses
   let pending     = false
@@ -203,12 +211,35 @@ function makeActionCallable<TInput, TResult, TServices, TSession>(
     error       = null
     fieldErrors = null
 
+    // Build middleware context for this action invocation
+    const mwCtx: MiddlewareContext<TSession, TServices> = {
+      params:       resolverCtx.bind.params,
+      searchParams: resolverCtx.bind.searchParams,
+      request:      resolverCtx.bind.request,
+      session:      resolverCtx.session,
+      services:     resolverCtx.services,
+      operation:    { type: "action", propKey: actionName, actionName },
+    }
+    // Attach input for audit middleware to read
+    ;(mwCtx as any).__actionInput = input
+
     try {
-      const { result, onSuccessResult } = await executeAction(
-        definition,
-        input,
-        resolverCtx,
-      )
+      let capturedResult: TResult | undefined
+      let capturedOnSuccess: OnSuccessResult | undefined
+
+      await runMiddleware(mwStack as any, mwCtx, async () => {
+        const { result, onSuccessResult } = await executeAction(
+          definition,
+          input,
+          resolverCtx,
+        )
+        capturedResult    = result
+        capturedOnSuccess = onSuccessResult
+        return result
+      })
+
+      const result        = capturedResult!
+      const onSuccessResult = capturedOnSuccess
       lastResult = result
 
       // Handle onSuccess
@@ -252,6 +283,8 @@ function makeActionCallable<TInput, TResult, TServices, TSession>(
 async function resolveAndInjectActions<TServices, TSession>(
   mapOrFn:     ActionMapOrFn<TServices, TSession>,
   resolverCtx: { bind: BindContext; services: TServices; session: TSession | undefined },
+  mwStack:     Middleware<TSession, TServices>[],
+  cacheGlobal?: CacheConfig,
 ): Promise<Record<string, ActionCallable<any, any>>> {
   const map = typeof mapOrFn === "function"
     ? await mapOrFn({
@@ -264,7 +297,7 @@ async function resolveAndInjectActions<TServices, TSession>(
 
   const result: Record<string, ActionCallable<any, any>> = {}
   for (const [key, def] of Object.entries(map)) {
-    result[key] = makeActionCallable(def, resolverCtx)
+    result[key] = makeActionCallable(def, resolverCtx, mwStack, key, cacheGlobal)
   }
   return result
 }
@@ -274,7 +307,7 @@ async function resolveAndInjectActions<TServices, TSession>(
 export function createBinder<TServices, TSession = undefined>(
   options: CreateBinderOptions<TServices, TSession>,
 ): Binder<TServices, TSession> {
-  const { registry, getServices, getSession, middleware: mwStack = [] } = options
+  const { registry, getServices, getSession, middleware: mwStack = [], cache: cacheGlobal, tracer } = options
 
   // ── Core execution: resolve services + session ─────────────────────────────
 
@@ -325,7 +358,10 @@ export function createBinder<TServices, TSession = undefined>(
           bv._nullable  as boolean,
           bv._isList    as boolean,
           viewDef.queryArgDefs,
+          (viewDef as any).cacheConfig ?? null,
           dedupe,
+          cacheGlobal,
+          tracer,
         )
       }
       throw new Error(`[typedrift] Unknown source type for prop "${key}".`)
@@ -397,7 +433,7 @@ export function createBinder<TServices, TSession = undefined>(
               executeSource(key, source, resolverCtx, dedupe, errorBoundary)
             )
           ),
-          resolveAndInjectActions(mapOrFn, resolverCtx),
+          resolveAndInjectActions(mapOrFn, resolverCtx, mwStack as any, cacheGlobal),
         ])
 
         const injected = {
@@ -426,7 +462,7 @@ export function createBinder<TServices, TSession = undefined>(
     const WithActions = async (props: Record<string, unknown>) => {
       const bindCtx     = normalizeBindContext(props)
       const resolverCtx = await resolveContext(bindCtx)
-      const actionProps = await resolveAndInjectActions(mapOrFn, resolverCtx)
+      const actionProps = await resolveAndInjectActions(mapOrFn, resolverCtx, mwStack as any, cacheGlobal)
       return (Component as any)({ ...props, ...actionProps })
     }
 

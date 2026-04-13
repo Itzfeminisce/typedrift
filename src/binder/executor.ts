@@ -1,23 +1,26 @@
-// ─── Executor — v0.3.0 ───────────────────────────────────────────────────────
+// ─── Executor — v0.5.0 ───────────────────────────────────────────────────────
 //
-// Changes from v0.2.0:
-//   - ctx now carries session alongside services
-//   - ResolverContext<TServices, TSession> flows through all resolver calls
+// New in v0.5.0:
+//   - Cache check/set around root resolver calls
+//   - Tracer spans around view and resolver execution
+//   - Tag-based invalidation via onSuccess.revalidate
 
 import type {
-  SelectionTree,
-  ResolverContext,
-  AnyEntity,
-  ResolvedQueryArgs,
-  QueryArgDefs,
-  ListResult,
-  BindContext,
+  SelectionTree, ResolverContext, AnyEntity,
+  ResolvedQueryArgs, QueryArgDefs, ListResult,
+  BindContext, ViewCacheConfig,
 } from "../types/index.js"
-import type { Registry } from "../registry/index.js"
+import type { Registry }         from "../registry/index.js"
+import type { CacheConfig }      from "../cache/index.js"
+import type { TypedriftTracer }  from "../telemetry/index.js"
+import {
+  buildCacheKey, cacheSetWithTags,
+}                                from "../cache/index.js"
+import { SpanNames }             from "../telemetry/index.js"
 
 export const relationModelRegistry = new Map<string, string>()
 
-// ── Per-request dedup cache ───────────────────────────────────────────────────
+// ── Dedup cache ───────────────────────────────────────────────────────────────
 
 export function makeDedupeCache() {
   const cache = new Map<string, Promise<unknown>>()
@@ -53,7 +56,7 @@ function resolveQueryArgs(defs: QueryArgDefs | null, ctx: BindContext): Resolved
   return result
 }
 
-// ── Resolve entity recursively ────────────────────────────────────────────────
+// ── Resolve entity ────────────────────────────────────────────────────────────
 
 async function resolveEntity<TServices, TSession>(
   modelName: string,
@@ -61,6 +64,7 @@ async function resolveEntity<TServices, TSession>(
   tree:      SelectionTree,
   ctx:       ResolverContext<TServices, TSession>,
   registry:  Registry<TServices, TSession>,
+  tracer?:   TypedriftTracer,
 ): Promise<Record<string, unknown>> {
   const registration = registry._get(modelName)
   if (!registration) {
@@ -74,38 +78,43 @@ async function resolveEntity<TServices, TSession>(
   for (const [relationKey, subTree] of tree.relations) {
     const relationResolver = registration.relations[relationKey]
     if (!relationResolver) {
-      throw new Error(
-        `[typedrift] No relation resolver for "${modelName}.${relationKey}".`
-      )
+      throw new Error(`[typedrift] No relation resolver for "${modelName}.${relationKey}".`)
     }
 
     const cacheKey     = `${modelName}.${relationKey}`
     const relModelName = relationModelRegistry.get(cacheKey)
     if (!relModelName) {
-      throw new Error(
-        `[typedrift] Cannot resolve related model for "${modelName}.${relationKey}".`
-      )
+      throw new Error(`[typedrift] Cannot resolve related model for "${modelName}.${relationKey}".`)
     }
 
-    const resultMap     = await relationResolver([entity], ctx, { selection: subTree, scope })
-    const relationValue = resultMap.get(entityId) ?? null
+    const span = tracer?.startSpan(SpanNames.RESOLVER_RELATION, {
+      "typedrift.model":    modelName,
+      "typedrift.relation": relationKey,
+    })
 
-    if (relationValue === null) {
-      result[relationKey] = null
-    } else if (Array.isArray(relationValue)) {
-      result[relationKey] = await Promise.all(
-        (relationValue as AnyEntity[]).map(child =>
-          resolveEntity(relModelName, child, subTree, ctx, registry)
+    try {
+      const resultMap = await relationResolver([entity], ctx, { selection: subTree, scope })
+      const value     = resultMap.get(entityId) ?? null
+      span?.setStatus("ok")
+
+      if (value === null) {
+        result[relationKey] = null
+      } else if (Array.isArray(value)) {
+        result[relationKey] = await Promise.all(
+          (value as AnyEntity[]).map(child =>
+            resolveEntity(relModelName, child, subTree, ctx, registry, tracer)
+          )
         )
-      )
-    } else {
-      result[relationKey] = await resolveEntity(
-        relModelName,
-        relationValue as AnyEntity,
-        subTree,
-        ctx,
-        registry,
-      )
+      } else {
+        result[relationKey] = await resolveEntity(
+          relModelName, value as AnyEntity, subTree, ctx, registry, tracer
+        )
+      }
+    } catch (err) {
+      span?.setStatus("error", (err as Error).message)
+      throw err
+    } finally {
+      span?.end()
     }
   }
 
@@ -123,7 +132,10 @@ export async function executeView<TServices, TSession>(
   nullable:     boolean,
   isList:       boolean,
   queryArgDefs: QueryArgDefs | null,
+  cacheConfig:  ViewCacheConfig | false | null,
   dedupe:       ReturnType<typeof makeDedupeCache>,
+  cacheGlobal?: CacheConfig,
+  tracer?:      TypedriftTracer,
 ): Promise<unknown> {
   const registration = registry._get(modelName)
   if (!registration) {
@@ -136,54 +148,115 @@ export async function executeView<TServices, TSession>(
   const scope          = registry._getScope(modelName)?.(ctx) ?? null
   const queryArgs      = resolveQueryArgs(queryArgDefs, ctx.bind)
   const requiredFields = registry._getRequiredFields(modelName)
-
   for (const relKey of tree.relations.keys()) {
     const fk = registration._relationFKs?.[relKey]
     if (fk) requiredFields.add(fk)
   }
 
+  // ── Cache check ─────────────────────────────────────────────────────────────
+  const shouldCache = cacheConfig !== false && cacheGlobal?.store != null
+  const cacheKey    = shouldCache ? buildCacheKey(modelName, rootInput, tree) : null
+
+  if (shouldCache && cacheKey && cacheGlobal) {
+    const cacheSpan = tracer?.startSpan(SpanNames.CACHE_CHECK, {
+      "typedrift.model":      modelName,
+      "typedrift.cache.key":  cacheKey,
+    })
+    try {
+      const cached = await cacheGlobal.store.get(cacheKey)
+      if (cached !== null) {
+        cacheSpan?.setAttributes({ "typedrift.cache.result": "hit" })
+        cacheSpan?.setStatus("ok")
+        return cached
+      }
+      cacheSpan?.setAttributes({ "typedrift.cache.result": "miss" })
+      cacheSpan?.setStatus("ok")
+    } catch {
+      cacheSpan?.setAttributes({ "typedrift.cache.result": "error" })
+      cacheSpan?.setStatus("error")
+    } finally {
+      cacheSpan?.end()
+    }
+  }
+
+  // ── Dedup ───────────────────────────────────────────────────────────────────
   const dedupeKey = makeDedupeKey(modelName, rootInput)
   const existing  = dedupe.get(dedupeKey)
   if (existing) return existing
 
   const promise = (async () => {
-    const raw = await registration.root!(rootInput, ctx, {
-      selection: tree, isList, queryArgs, scope, requiredFields,
+    const rootSpan = tracer?.startSpan(SpanNames.RESOLVER_ROOT, {
+      "typedrift.model":   modelName,
+      "typedrift.isList":  isList,
     })
+
+    let raw: unknown
+    try {
+      raw = await registration.root!(rootInput, ctx, {
+        selection: tree, isList, queryArgs, scope, requiredFields,
+      })
+      rootSpan?.setStatus("ok")
+    } catch (err) {
+      rootSpan?.setStatus("error", (err as Error).message)
+      throw err
+    } finally {
+      rootSpan?.end()
+    }
+
+    let resolved: unknown
 
     if (isList) {
       const listRaw = raw as any
-      const data    = Array.isArray(listRaw)
-        ? listRaw
-        : Array.isArray(listRaw?.data) ? listRaw.data : []
-
-      const resolved = await Promise.all(
+      const data    = Array.isArray(listRaw) ? listRaw
+                    : Array.isArray(listRaw?.data) ? listRaw.data : []
+      const resolvedData = await Promise.all(
         (data as AnyEntity[]).map(entity =>
-          resolveEntity(modelName, entity, tree, ctx, registry)
+          resolveEntity(modelName, entity, tree, ctx, registry, tracer)
         )
       )
-
-      return {
-        data:    resolved,
+      resolved = {
+        data:    resolvedData,
         total:   listRaw?.total   ?? null,
         page:    listRaw?.page    ?? queryArgs?.paginate?.page    ?? 1,
         perPage: listRaw?.perPage ?? queryArgs?.paginate?.perPage ?? data.length,
       } satisfies ListResult<unknown>
-    }
-
-    if (raw === null) {
-      if (!nullable) {
-        throw new Error(
-          `[typedrift] Root resolver for "${modelName}" returned null ` +
-          `but the view is not nullable. Chain .nullable() to allow null.`
-        )
+    } else {
+      if (raw === null) {
+        if (!nullable) {
+          throw new Error(
+            `[typedrift] Root resolver for "${modelName}" returned null but view is not nullable.`
+          )
+        }
+        resolved = null
+      } else {
+        resolved = await resolveEntity(modelName, raw as AnyEntity, tree, ctx, registry, tracer)
       }
-      return null
     }
 
-    return resolveEntity(modelName, raw as AnyEntity, tree, ctx, registry)
+    // ── Cache write ───────────────────────────────────────────────────────────
+    if (shouldCache && cacheKey && cacheGlobal && resolved !== null) {
+      const effectiveConfig = cacheConfig as ViewCacheConfig | null
+      const ttl             = effectiveConfig?.ttl ?? cacheGlobal.defaultTtl
+      const tags            = effectiveConfig?.tags?.(rootInput) ?? []
+
+      cacheSetWithTags(cacheGlobal.store, cacheKey, resolved, ttl, tags).catch(err => {
+        console.warn("[typedrift] Cache write failed:", err)
+      })
+    }
+
+    return resolved
   })()
 
   dedupe.set(dedupeKey, promise)
   return promise
+}
+
+// ── invalidateCacheTags ───────────────────────────────────────────────────────
+
+export async function invalidateCacheTags(
+  tags:        string[],
+  cacheGlobal?: CacheConfig,
+): Promise<void> {
+  if (!cacheGlobal?.store || tags.length === 0) return
+  await cacheGlobal.store.invalidate(tags)
 }

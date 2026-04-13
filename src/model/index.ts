@@ -6,7 +6,7 @@ import type {
   RelationDescriptor,
   AnyModelDescriptor,
 } from "../field/index.js"
-import type { QueryArgDefs } from "../types/index.js"
+import type { QueryArgDefs, ViewCacheConfig } from "../types/index.js"
 import { createView } from "../view/index.js"
 
 export type ModelFields = Record<string, AnyFieldDescriptor>
@@ -31,6 +31,7 @@ export type ModelDescriptor<
   view<TSelection extends ViewSelection<TFields>>(
     selection:    TSelection,
     queryArgDefs?: QueryArgDefs,
+    cacheConfig?:  ViewCacheConfig | false,
   ): import("../view/index.js").ViewDescriptor<ModelDescriptor<TName, TFields>, TSelection>
 }
 
@@ -52,8 +53,8 @@ export function model<
     __type: "model",
     name,
     fields,
-    view(selection, queryArgDefs) {
-      return createView(descriptor as any, selection, queryArgDefs) as any
+    view(selection, queryArgDefs, cacheConfig) {
+      return createView(descriptor as any, selection, queryArgDefs, cacheConfig) as any
     },
   }
 

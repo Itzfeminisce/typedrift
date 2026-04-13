@@ -1,4 +1,4 @@
-// typedrift v0.4.0 — public surface
+// typedrift v0.5.0 — public surface
 
 export { field, ref }            from "./field/index.js"
 export type {
@@ -32,32 +32,39 @@ export { createBinder }          from "./binder/index.js"
 export type {
   Binder, CreateBinderOptions,
   RawSource, InferProps, InferActionProps,
-  BindOptions, ErrorBoundaryMode,
-  BoundComponent,
+  BindOptions, ErrorBoundaryMode, BoundComponent,
 }                                from "./binder/index.js"
 
-// v0.4.0 — action()
 export { action }                from "./action/index.js"
 export type {
-  ActionDefinition, ActionCallable,
-  ActionOptions, ActionState,
+  ActionDefinition, ActionCallable, ActionOptions, ActionState,
   ParseSchema, OnSuccessFn, OnSuccessResult,
   InferActionInput, InferActionResult,
 }                                from "./action/index.js"
 
-export { middleware, runMiddleware } from "./middleware/index.js"
+// v0.5.0 — middleware with filter
+export { middleware, runMiddleware, withFilter, auditMiddleware, rateLimitMiddleware } from "./middleware/index.js"
 export type {
-  Middleware, MiddlewareContext,
-  OperationDescriptor, Next,
+  Middleware, MiddlewareContext, MiddlewareFilter,
+  OperationDescriptor, Next, AuditEntry,
+  AuditMiddlewareOptions, RateLimitMiddlewareOptions, RateLimitStore,
 }                                from "./middleware/index.js"
 
+// v0.5.0 — cache
+export { memoryCacheStore, redisCacheStore } from "./cache/index.js"
+export type {
+  CacheStore, CacheConfig, ViewCacheConfig,
+}                                from "./cache/index.js"
+
+// v0.5.0 — telemetry
+export { openTelemetryTracer }   from "./telemetry/index.js"
+export type {
+  TypedriftTracer, TypedriftSpan, SpanAttributes,
+}                                from "./telemetry/index.js"
+
 export {
-  TypedriftError,
-  NotFoundError,
-  ForbiddenError,
-  ValidationError,
-  RateLimitError,
-  InternalError,
+  TypedriftError, NotFoundError, ForbiddenError,
+  ValidationError, RateLimitError, InternalError,
   isTypedriftError,
 }                                from "./errors/index.js"
 export type {
@@ -65,8 +72,7 @@ export type {
 }                                from "./errors/index.js"
 
 export type {
-  SelectionTree, BindContext,
-  ResolverContext, RawContext,
-  ResolvedQueryArgs, QueryArgDefs,
-  ListResult, RootResolverMeta, RelationResolverMeta,
+  SelectionTree, BindContext, ResolverContext, RawContext,
+  ResolvedQueryArgs, QueryArgDefs, ListResult,
+  RootResolverMeta, RelationResolverMeta,
 }                                from "./types/index.js"

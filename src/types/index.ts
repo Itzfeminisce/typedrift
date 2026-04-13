@@ -65,3 +65,9 @@ export type AnyEntity = Record<string, unknown>
 export type OmitNever<T> = {
   [K in keyof T as T[K] extends never ? never : K]: T[K]
 }
+
+// v0.5.0 — per-view cache configuration
+export type ViewCacheConfig = {
+  ttl:   number
+  tags?: (input: Record<string, unknown>) => string[]
+}

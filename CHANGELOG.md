@@ -85,3 +85,73 @@
 ### Unchanged from v0.3.0
 - All bind(), raw(), InferProps, middleware, session, errors — zero breaking changes
 - All 88 v0.1.0–v0.3.0 tests pass unchanged
+
+## 0.5.0
+
+### Added
+
+**Middleware filter system**
+- `MiddlewareFilter<TSession, TServices>` type — "all" | "actions" | "views" | string[] | predicate fn
+- `evalFilter(filter, ctx)` — resolves any filter form to boolean, sync or async
+- `withFilter(filter, middleware)` — wrap any custom middleware with a filter
+- `filter` option on all built-in middleware (auditMiddleware, rateLimitMiddleware)
+- Predicate form receives full MiddlewareContext including session and services
+
+**Audit middleware**
+- `auditMiddleware({ filter?, redact?, onEntry })` — span-compatible audit log
+- `AuditEntry` type — who/what/when/outcome, maps directly to OTel span attributes
+- `redact()` option — transform entry before onEntry (scrub passwords, tokens)
+- Fire-and-forget — audit logging never blocks the response
+- Actions run their own middleware pass at invocation time (not render time)
+
+**Rate limit middleware**
+- `rateLimitMiddleware({ filter?, store, window, max, key })` — global rate limiting
+- `RateLimitStore` interface — `increment(key, windowMs): Promise<number>`
+- Window formats: "30s", "1m", "2h", "1d"
+- `RateLimitError` thrown on limit exceeded (already in error hierarchy)
+
+**Read caching**
+- `CacheConfig` on `createBinder` — `{ store, defaultTtl }`
+- `ViewCacheConfig` on `view()` third argument — `{ ttl, tags }`
+- `cache: false` on view — opt out of global cache for specific views
+- `memoryCacheStore()` — in-process store for development and testing
+- `redisCacheStore(redis)` — Redis-backed with tag-based invalidation
+- Cache key = model + serialised input + selection hash (unique per view+input)
+- `onSuccess.revalidate` wired to cache invalidation — tags purged after action
+
+**Telemetry**
+- `TypedriftTracer` interface — minimal, no hard OTel dependency
+- `openTelemetryTracer(otelTracer)` — adapts any OTel tracer
+- Automatic spans: typedrift.view, typedrift.resolver.root, typedrift.resolver.relation, typedrift.cache, typedrift.action
+- Zero overhead when tracer not configured
+
+### Architecture fix
+- Action callables now run the middleware stack at **invocation time** (when user triggers the action), not at render time. This means `filter: "actions"` correctly targets user-triggered mutations, and `filter: "views"` correctly targets server render data fetching.
+
+### Unchanged from v0.4.0
+- All model, view, bind, actions, raw, InferProps — zero breaking changes
+- All 114 v0.1.0–v0.4.0 tests pass unchanged
+
+## 1.0.0 — Stable release
+
+### Breaking changes
+- `"list"` string convention removed from `.from()` — use `.list().from(() => ({}))`
+- Session via `ctx.services.session` pattern is now discouraged in favour of `getSession` + `ctx.session`
+
+### Added
+- `MIGRATION.md` — complete migration guide from v0.x
+- Type audit test suite verifying `InferProps` edge cases are correct
+- `type-audit.test.ts` — 7 type-level + runtime assertions covering critical shapes
+
+### Stability guarantee
+All exports listed in MIGRATION.md under "What is frozen" are semver-stable.
+Breaking changes to any of these require a v2.0.0 release.
+
+### All 147 tests pass
+- v0.1.0 integration tests (12)
+- v0.2.0 batch/scope/dedup/validate (22)
+- v0.3.0 session/middleware/errors (25)
+- v0.4.0 action/guard/validation/chains (26)
+- v0.5.0 filter/audit/ratelimit/cache/tracer (26)
+- model-view (15), registry (6), field (8)
+- type-audit (7) — new in v1.0.0
