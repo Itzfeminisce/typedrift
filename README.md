@@ -237,20 +237,15 @@ export const binder = createBinder({
 
 ---
 
-## API reference
+## Changelog reference
 
-See the full API reference and guides at https://typedrift.dev
+See the full Changelog and guides at https://github/Itzfeminisce/typedrift
 
 ---
 
 ## Scope
 
 Typedrift v1.0.0 is reads + writes, RSC-compatible, and runtime-agnostic.
-
-**In scope:** model/view/bind/actions, batch resolvers, middleware, caching, telemetry, structured errors.
-
-**Out of scope:** ORM adapters, framework adapters, realtime, subscriptions.
-These ship as separate packages with their own versioning.
 
 ---
 

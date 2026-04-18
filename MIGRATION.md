@@ -162,36 +162,14 @@ these require a v2.0.0 release.
 - `TypedriftTracer`, `TypedriftSpan`
 
 ---
+ 
+## Ecosystem packages 
 
-## What is NOT frozen (may change in minor versions)
+The following are built-in packages with their own semver:
 
-- Internal executor implementation
-- Dev tools endpoint (`typedrift/dev`) response shape
-- Built-in middleware internal implementation details
-- Cache store internal interfaces beyond the public `CacheStore` type
-
+- `typedrift/next` — Next.js App Router adapter (v1.2.0)
+- `typedrift/start` — Tanstack Start Adapter (v1.2.0)
+- `typedrift/cli` — registry validation CLI (v1.2.0)
+ 
 ---
-
-## Ecosystem packages (not in this release)
-
-The following are planned as separate packages with their own semver:
-
-- `typedrift-next` — Next.js App Router adapter (v1.1.0)
-- `typedrift-drizzle` — Drizzle ORM adapter (v1.2.0)
-- `typedrift-cli` — registry validation CLI (v1.3.0)
-
-They are separate packages so their dependencies (Next.js, Drizzle)
-do not affect the core `typedrift` package version.
-
----
-
-## Checklist
-
-Before upgrading to v1.0.0, verify:
-
-- [ ] No `.from(() => "list")` usage — replace with `.list().from(() => ({}))`
-- [ ] Session moved from `getServices` to `getSession` (if used)
-- [ ] `ctx.services.session` replaced with `ctx.session` (if used)
-- [ ] `registry.validate()` called at startup in development
-- [ ] TypeScript version is 5.0+ (required for exact generic inference)
-- [ ] React version is 19.0+ (required for RSC async components)
+ 

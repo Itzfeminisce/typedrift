@@ -155,3 +155,74 @@ Breaking changes to any of these require a v2.0.0 release.
 - v0.5.0 filter/audit/ratelimit/cache/tracer (26)
 - model-view (15), registry (6), field (8)
 - type-audit (7) — new in v1.0.0
+
+## 1.1.0
+
+### Added — Framework adapters
+
+**typedrift/next — Next.js App Router adapter**
+- `createNextBinder(options)` — drop-in replacement for `createBinder`
+- Auto-wires `params` from Next.js dynamic segment page props
+- Auto-wires `searchParams` from Next.js page props
+- Handles Promise-wrapped props (Next.js 15+ async params)
+- `onSuccess.redirect` → calls `redirect()` from `next/navigation`
+- `onSuccess.revalidate` → calls `revalidateTag()` from `next/cache`
+- `session: "cookie"` — thick opt-in: reads Next.js cookies automatically
+- `session: { cookie, secret, maxAge }` — config object form
+- `cache: { defaultTtl }` without store → uses Next.js `unstable_cache`
+- `cache: { store, defaultTtl }` → uses your store (Redis etc)
+
+**typedrift/start — TanStack Start adapter**
+- `createStartBinder(options)` — drop-in replacement for `createBinder`
+- Auto-wires `params` from TanStack Router route context
+- Auto-wires `searchParams` from TanStack Router `search` props
+- `onSuccess.redirect` → wires `router.navigate()` (client-side)
+- `onSuccess.revalidate` → wires `router.invalidate()` (client-side)
+- `session: "cookie"` — thick opt-in: reads request cookies automatically
+- `session: { cookie, secret, maxAge }` — config object form
+- `cache: { defaultTtl }` without store → uses `memoryCacheStore()`
+- `cache: { store, defaultTtl }` → uses your store (Redis etc)
+
+**Package structure**
+- `typedrift/next` and `typedrift/start` as subpath exports — one package, one install
+- Framework packages are optional peer deps — Next.js users don't pull in TanStack
+- Lazy imports — framework modules only loaded when the adapter is actually called
+
+### Unchanged
+- Core `typedrift` API — zero changes
+- All 147 v1.0.0 tests pass unchanged
+
+## 1.2.0
+
+### Added — CLI
+
+**Commands**
+- `npx typedrift check` — validate registry completeness, exit 1 if issues found
+- `npx typedrift check --watch` — continuous validation via chokidar, re-checks on save
+- `npx typedrift inspect` — full registry state: models, views, resolvers, actions, issues
+- `npx typedrift generate` — show what can be generated
+- `npx typedrift generate --missing` — scaffold missing resolver stubs (never overwrites)
+- `npx typedrift generate --model <n>` — scaffold a new model file
+- `npx typedrift --help` — usage reference
+
+**Config**
+- `typedrift.config.ts` — project config file with auto-detection
+- `defineConfig()` from `typedrift/cli` — typed config helper
+- Auto-detects registry file from known locations
+- Auto-reads tsconfig path aliases
+- Fallback to glob scanning when tsconfig unavailable
+
+**Static analysis**
+- `TypedriftAnalyser` — ts-morph based AST scanner (exported from `typedrift/cli`)
+- Extracts: models, fields, relations, views, registered resolvers, actions
+- `AnalysisIssue` — typed issue shape with severity and usedIn tracking
+- Handles missing tsconfig gracefully — falls back to glob scanning
+
+**Package**
+- `bin: { "typedrift": "./dist/cli/bin.js" }` — `npx typedrift` just works
+- `typedrift/cli` subpath export — `defineConfig` + analysis types for tooling
+- CLI built as Node.js target — separate from browser-safe library build
+
+### Unchanged
+- Core API, Next.js adapter, Start adapter — zero changes
+- All 168 v1.1.0 tests pass unchanged
