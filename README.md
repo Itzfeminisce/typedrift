@@ -16,6 +16,22 @@ pnpm add typedrift
 
 Requires React 19+ and TypeScript 5.0+.
 
+## Agent skill
+
+Typedrift also ships an agent skill in this repo at `skills/typedrift`.
+
+Install from the repo by skill name:
+
+```bash
+npx skills add Itzfeminisce/typedrift --skill typedrift
+```
+
+Install directly from the skill folder:
+
+```bash
+npx skills add https://github.com/Itzfeminisce/typedrift/tree/main/skills/typedrift
+```
+
 ---
 
 ## The idea
