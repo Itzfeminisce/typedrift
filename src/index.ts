@@ -76,3 +76,11 @@ export type {
   ResolvedQueryArgs, QueryArgDefs, ListResult,
   RootResolverMeta, RelationResolverMeta,
 }                                from "./types/index.js"
+
+// v1.4.0 — live
+export { CLEAR }          from "./live/types.js"
+export type {
+  LiveOptions, LiveState, LiveBoundViewDescriptor,
+  LivePushMessage, LiveSubscription, OnDataMeta,
+  ReconnectConfig,
+}                         from "./live/types.js"

@@ -1,6 +1,6 @@
 {
   "name": "typedrift",
-  "version": "1.2.1",
+  "version": "1.4.0",
   "description": "A React data library that derives server queries from component data types and passes typed props to components automatically.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -29,6 +29,11 @@
       "types": "./dist/cli/index.d.ts",
       "import": "./dist/cli/index.js",
       "require": "./dist/cli/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.cjs"
     }
   },
   "files": [
@@ -68,7 +73,6 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^24.5.2",
     "@types/react": "^19.0.0",
     "chokidar": "^3.6.0",
     "picocolors": "^1.0.0",

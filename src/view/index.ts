@@ -1,6 +1,8 @@
 // ─── View — v0.2.0 ───────────────────────────────────────────────────────────
 
 import type { SelectionTree, BindContext, QueryArgDefs, ListResult, ViewCacheConfig } from "../types/index.js"
+import type { LiveOptions, LiveState, LiveBoundViewDescriptor } from "../live/types.js"
+import { DEFAULT_LIVE_STATE } from "../live/types.js"
 import type { ModelFields, ViewSelection } from "../model/index.js"
 import type {
   AnyModelDescriptor,
@@ -71,6 +73,26 @@ export type BoundViewDescriptor<
   readonly _nullable:  TNullable
   readonly _isList:    TIsList
   nullable(): BoundViewDescriptor<TModel, TSelection, TShape, true, TIsList>
+
+  /**
+   * Mark this bound view as SSE-backed — updates when server pushes.
+   * The prop shape is identical to the static case.
+   *
+   * @example
+   * binder.bind(PostPage, { post: PostData.live() })
+   * binder.bind(PostPage, { post: PostData.live({ interval: 5000 }) })
+   */
+  live(options?: LiveOptions<Record<string, unknown>, TShape>): LiveBoundViewDescriptor<TShape, Record<string, unknown>>
+
+  /**
+   * React hook — call inside the component to access live connection state.
+   * Returns safe defaults when view is not live or not inside a live binder.
+   *
+   * @example
+   * const { stale, loading, updatedAt } = PostData.useLiveData()
+   */
+  useLiveData(): LiveState
+
   readonly shape: TIsList extends true
     ? ListResult<TShape>
     : TNullable extends true
@@ -193,6 +215,23 @@ function makeBoundView<
     nullable() {
       return makeBoundView(view, fromFn, true, _isList) as any
     },
+
+    live(options?: LiveOptions<any, any>) {
+      return makeLiveBoundView(view, fromFn, _nullable, _isList, options ?? {})
+    },
+
+    useLiveData(): LiveState {
+      // This is a React hook — must be called inside a component
+      // The actual implementation is injected by LiveProvider via a module-level registry
+      // When not inside a live binder, returns safe defaults
+      const fn = (globalThis as any).__typedrift_useLiveData
+      if (typeof fn === "function") {
+        // The key is derived from the view's model name + selection hash
+        const key = `${view.model.name}:${JSON.stringify(view.selection)}`
+        return fn(key)
+      }
+      return DEFAULT_LIVE_STATE
+    },
     get shape(): any {
       throw new Error("[typedrift] .shape is a compile-time type accessor only.")
     },
@@ -268,6 +307,38 @@ export type InferViewShape<T extends ViewDescriptor<any, any>> =
   T extends ViewDescriptor<infer TModel, infer TSelection>
     ? InferSelectionShape<TModel["fields"] & ModelFields, TSelection>
     : never
+
+// ── makeLiveBoundView factory ─────────────────────────────────────────────────
+
+function makeLiveBoundView<TShape>(
+  view:      ViewDescriptor<any, any>,
+  fromFn:    FromResolver<Record<string, unknown>>,
+  _nullable: boolean,
+  _isList:   boolean,
+  options:   LiveOptions<Record<string, unknown>, TShape>,
+): LiveBoundViewDescriptor<TShape, Record<string, unknown>> {
+  // Derive a stable key from the view for useLiveData() lookups
+  const liveKey = `${view.model.name}:${JSON.stringify(view.selection)}`
+
+  return {
+    __type:  "live-bound-view",
+    options,
+    get shape(): any {
+      throw new Error("[typedrift] .shape is a compile-time type accessor only.")
+    },
+    useLiveData(): LiveState {
+      const fn = (globalThis as any).__typedrift_useLiveData
+      if (typeof fn === "function") return fn(liveKey)
+      return DEFAULT_LIVE_STATE
+    },
+    // Internal accessors used by binder
+    _view:     view,
+    _from:     fromFn,
+    _nullable,
+    _isList,
+    _liveKey:  liveKey,
+  } as any
+}
 
 export type InferBoundViewShape<T extends BoundViewDescriptor<any, any, any, any, any>> =
   T["shape"]

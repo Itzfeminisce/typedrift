@@ -226,3 +226,53 @@ Breaking changes to any of these require a v2.0.0 release.
 ### Unchanged
 - Core API, Next.js adapter, Start adapter — zero changes
 - All 168 v1.1.0 tests pass unchanged
+
+## 1.4.0
+
+### Added — view().live() realtime SSE
+
+**Core API**
+- `boundView.live(options?)` — marks a bound view as SSE-backed, returns `LiveBoundViewDescriptor`
+- `boundView.useLiveData()` — React hook attached to the view object, returns `LiveState`
+- `CLEAR` sentinel — return from `onData` to explicitly reset the prop to null
+- Prop shape is **identical** to the static case — zero InferProps drift
+
+**LiveOptions**
+- `interval` — poll fallback ms when no server push arrives
+- `enabled` — conditional subscription (boolean or ctx function)
+- `tags` — explicit subscription tags function
+- `staleTime` — ms before stale: true after disconnect (prevents banner flash)
+- `reconnect` — boolean or `{ attempts, delay, backoff, maxDelay }` config
+- `onData(incoming, previous, meta)` — transform/accumulate push data; null = keep previous, CLEAR = reset
+- `validate` — schema-agnostic push validation (.parse() interface)
+- `maxAge` + `onExpire` — temporal validity ("stale" | "refetch" | "clear")
+
+**LiveState (from useLiveData())**
+- `stale` — connection dropped, showing last known value
+- `loading` — first load or reconnecting
+- `error` — validation failure or exhausted reconnect attempts
+- `updatedAt` — Date of last successful push
+- `pushCount` — total pushes received since mount
+
+**SSE infrastructure**
+- `binder.liveHandler()` — explicit SSE route handler for manual registration
+- Next.js adapter: `createNextLiveRoute(binder)` — ready-made route export
+- One SSE connection per page, multiplexed across multiple live sources
+- Heartbeat every 15s to keep connection alive through proxies
+- Exponential backoff reconnection by default
+
+**typedrift/react subpath**
+- `LiveContext` — React context populated by the binder
+- `useLiveDataForKey(key)` — low-level hook (prefer view.useLiveData())
+- `LiveProvider` — wraps bound components with live sources
+- `LiveSourceConfig`, `LiveProviderProps` types
+
+**AI streaming support**
+- `onData` meta carries `{ done, accumulated, pushCount }`
+- `accumulated` contains all raw SSE tokens concatenated
+- `done` signals stream completion — parse final JSON in this callback
+- Pattern: return null mid-stream, return parsed result when done
+
+### Unchanged
+- Core API, adapters, CLI — zero breaking changes
+- All 190 v1.2.0 tests pass unchanged

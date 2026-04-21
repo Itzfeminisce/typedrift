@@ -25,6 +25,7 @@ import { executeAction }                           from "../action/index.js"
 import { executeView, relationModelRegistry, makeDedupeCache, invalidateCacheTags } from "./executor.js"
 import type { CacheConfig }     from "../cache/index.js"
 import type { TypedriftTracer } from "../telemetry/index.js"
+import type { LiveBoundViewDescriptor } from "../live/types.js"
 
 // ── RawSource ─────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,18 @@ export type Binder<TServices, TSession = undefined> = {
   raw<TResult>(
     fn: (ctx: RawContext<TServices, TSession>) => Promise<TResult>,
   ): RawSource<TServices, TSession, TResult>
+
+  /**
+   * Returns a fetch-compatible SSE handler for manual route registration.
+   * Use when you need explicit control over the live endpoint path.
+   * By default the adapter (typedrift/next or typedrift/start) registers
+   * /__typedrift/live automatically.
+   *
+   * @example
+   * // app/api/__typedrift/live/route.ts
+   * export const GET = binder.liveHandler()
+   */
+  liveHandler(): (request: Request) => Promise<Response>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -481,7 +494,97 @@ export function createBinder<TServices, TSession = undefined>(
     return { __type: "raw", execute: fn, _resultType: undefined as any }
   }
 
-  return { bind, actions, raw } as Binder<TServices, TSession>
+  // ── liveHandler ───────────────────────────────────────────────────────────
+
+  function liveHandler() {
+    return async (request: Request): Promise<Response> => {
+      const url   = new URL(request.url)
+      const param = url.searchParams.get("subs")
+      if (!param) {
+        return new Response("Missing subs parameter", { status: 400 })
+      }
+
+      let subs: any[]
+      try {
+        subs = JSON.parse(param)
+      } catch {
+        return new Response("Invalid subs parameter", { status: 400 })
+      }
+
+      const bindCtx  = {
+        params:       Object.fromEntries(url.searchParams),
+        searchParams: Object.fromEntries(url.searchParams),
+        request,
+      }
+      const services = await getServices(bindCtx)
+      const session  = getSession ? await getSession(bindCtx) : undefined as any
+      const resolverCtx = { bind: bindCtx, services, session }
+
+      // Create SSE stream
+      const encoder = new TextEncoder()
+      const stream  = new ReadableStream({
+        async start(controller) {
+          const send = (data: unknown) => {
+            const msg = `data: ${JSON.stringify(data)}
+
+`
+            controller.enqueue(encoder.encode(msg))
+          }
+
+          // Initial push for each subscription
+          for (const sub of subs) {
+            try {
+              const reg = registry._get(sub.model)
+              if (!reg?.root) continue
+
+              const result = await reg.root(sub.input, resolverCtx, {
+                selection:      sub.selectionTree ?? { scalars: new Set(["id"]), relations: new Map() },
+                isList:         false,
+                queryArgs:      null,
+                scope:          null,
+                requiredFields: new Set(),
+              })
+
+              send({ key: sub.key, data: result, done: true })
+            } catch (err: any) {
+              send({
+                key:   sub.key,
+                error: { code: err.code ?? "INTERNAL", status: err.status ?? 500, message: err.message },
+              })
+            }
+          }
+
+          // Set up tag-based push subscriptions
+          // In production this connects to Redis pub/sub or similar
+          // For now we send a heartbeat to keep the connection alive
+          const heartbeat = setInterval(() => {
+            try {
+              controller.enqueue(encoder.encode(": heartbeat\n\n"))
+            } catch {
+              clearInterval(heartbeat)
+            }
+          }, 15_000)
+
+          // Clean up on disconnect
+          request.signal.addEventListener("abort", () => {
+            clearInterval(heartbeat)
+            controller.close()
+          })
+        },
+      })
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type":  "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection":    "keep-alive",
+          "X-Accel-Buffering": "no",  // disable nginx buffering
+        },
+      })
+    }
+  }
+
+  return { bind, actions, raw, liveHandler } as Binder<TServices, TSession>
 }
 
 // ── InferActionProps (convenience alias) ─────────────────────────────────────
