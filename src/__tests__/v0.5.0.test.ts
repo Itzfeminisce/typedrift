@@ -187,7 +187,7 @@ describe("auditMiddleware()", () => {
       ],
     })
 
-    const createPost = action({
+    const createPost = action<{ title: string }, { id: string; title: string }, AppServices, AppSession>({
       input:   titleSchema,
       execute: async (input) => ({ id: "new", title: input.title }),
     })
@@ -218,7 +218,7 @@ describe("auditMiddleware()", () => {
       ],
     })
 
-    const failAction = action({
+    const failAction = action<{ title: string }, { id: string }, AppServices, AppSession>({
       input:   titleSchema,
       execute: async () => { throw new NotFoundError("Post", "p99") },
     })
@@ -250,7 +250,10 @@ describe("auditMiddleware()", () => {
     })
 
     const PostData   = Post.view({ title: true }).from(() => ({ id: "p1" }))
-    const createPost = action({ input: titleSchema, execute: async (i) => ({ id: "x", title: i.title }) })
+    const createPost = action<{ title: string }, { id: string; title: string }, AppServices, AppSession>({
+      input: titleSchema,
+      execute: async (i) => ({ id: "x", title: i.title }),
+    })
 
     let received: any = null
     await (binder.bind(
@@ -277,7 +280,10 @@ describe("auditMiddleware()", () => {
       ],
     })
 
-    const createPost = action({ input: titleSchema, execute: async (i) => ({ id: "x" }) })
+    const createPost = action<{ title: string }, { id: string }, AppServices, AppSession>({
+      input: titleSchema,
+      execute: async () => ({ id: "x" }),
+    })
     let received: any = null
     await (binder.actions((p: any) => { received = p; return null }, { onCreate: createPost }) as any)({ params: {}, searchParams: {} })
     await received.onCreate({ title: "Secret title" })
@@ -316,12 +322,15 @@ describe("rateLimitMiddleware()", () => {
           store,
           window: "1m",
           max:    5,
-          key:    (ctx) => ctx.session?.userId ?? "anon",
+          key:    (ctx: MiddlewareContext<AppSession, AppServices>) => ctx.session?.userId ?? "anon",
         }),
       ],
     })
 
-    const createPost = action({ input: titleSchema, execute: async (i) => ({ id: "x" }) })
+    const createPost = action<{ title: string }, { id: string }, AppServices, AppSession>({
+      input: titleSchema,
+      execute: async () => ({ id: "x" }),
+    })
     let received: any = null
     await (binder.actions((p: any) => { received = p; return null }, { onCreate: createPost }) as any)({ params: {}, searchParams: {} })
 
@@ -342,12 +351,15 @@ describe("rateLimitMiddleware()", () => {
           store,
           window: "1m",
           max:    2,
-          key:    (ctx) => ctx.session?.userId ?? "anon",
+          key:    (ctx: MiddlewareContext<AppSession, AppServices>) => ctx.session?.userId ?? "anon",
         }),
       ],
     })
 
-    const createPost = action({ input: titleSchema, execute: async (i) => ({ id: "x" }) })
+    const createPost = action<{ title: string }, { id: string }, AppServices, AppSession>({
+      input: titleSchema,
+      execute: async () => ({ id: "x" }),
+    })
     let received: any = null
     await (binder.actions((p: any) => { received = p; return null }, { onCreate: createPost }) as any)({ params: {}, searchParams: {} })
 
@@ -391,7 +403,10 @@ describe("rateLimitMiddleware()", () => {
           rateLimitMiddleware({ filter: "actions", store, window, max: 100, key: () => "k" }),
         ],
       })
-      const a = action({ input: titleSchema, execute: async (i) => ({ id: "x" }) })
+      const a = action<{ title: string }, { id: string }, AppServices, AppSession>({
+        input: titleSchema,
+        execute: async () => ({ id: "x" }),
+      })
       let received: any = null
       await (binder.actions((p: any) => { received = p; return null }, { a }) as any)({ params: {}, searchParams: {} })
       await received.a({ title: "Test" })
@@ -503,12 +518,14 @@ describe("read caching via createBinder cache config", () => {
       cache: { store: cacheStore, defaultTtl: 60 },
     })
 
-    const PostData = Post.view({ title: true }, {
-      cache: { ttl: 60, tags: (input) => [`post:${(input as any).id}`] },
-    }).from(() => ({ id: "p1" }))
+    const PostData = Post.view(
+      { title: true },
+      undefined,
+      { ttl: 60, tags: (input: Record<string, unknown>) => [`post:${String(input["id"])}`] },
+    ).from(() => ({ id: "p1" }))
 
-    const updatePost = action({
-      input:   ({ parse: (d: any) => d }) as any,
+    const updatePost = action<unknown, { id: string }, AppServices, AppSession>({
+      input:   ({ parse: (d: unknown) => d }) as any,
       execute: async () => ({ id: "p1" }),
       onSuccess: () => ({ revalidate: ["post:p1"] }),
     })

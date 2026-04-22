@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import { field, ref, model, createRegistry, batch, action } from "../index.js"
 import { createNextBinder }  from "../next/index.js"
 import { createStartBinder } from "../start/index.js"
+import type { ReactElement } from "react"
 
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
@@ -224,6 +225,47 @@ describe("createNextBinder — import from typedrift/next", () => {
     expect(typeof received.create).toBe("function")
   })
 
+  it("preserves client-component boundaries by returning a React element", async () => {
+    const binder = createNextBinder({
+      registry:    makeRegistry(),
+      getServices: async () => ({ db }),
+    })
+    const PostData = Post.view({ title: true }).from(() => ({ id: "p1" }))
+    const ClientRef = { $$typeof: Symbol.for("react.client.reference") } as any
+
+    const rendered = await (binder.bind(ClientRef, { post: PostData }) as any)({
+      params: {},
+      searchParams: {},
+    }) as ReactElement
+
+    expect(rendered.type).toBe(ClientRef)
+    expect((rendered.props as any).post.title).toBe("Hello")
+  })
+
+  it("injects actions into client-boundary renders without direct invocation", async () => {
+    const binder = createNextBinder({
+      registry:    makeRegistry(),
+      getServices: async () => ({ db }),
+      getSession:  async () => mockSession,
+    })
+    const postSchema = { parse: (d: any) => d as { title: string } }
+    const createPost = action<{ title: string }, { id: string }, AppServices, AppSession>({
+      input:   postSchema,
+      execute: async () => ({ id: "new" }),
+    })
+    const PostData = Post.view({ title: true }).from(() => ({ id: "p1" }))
+    const ClientRef = { $$typeof: Symbol.for("react.client.reference") } as any
+
+    const rendered = await (binder.bind(ClientRef, { post: PostData }).actions({ create: createPost }) as any)({
+      params: {},
+      searchParams: {},
+    }) as ReactElement
+
+    expect(rendered.type).toBe(ClientRef)
+    expect(typeof (rendered.props as any).create).toBe("function")
+    await expect((rendered.props as any).create({ title: "Hello" })).resolves.toEqual({ id: "new" })
+  })
+
   it("searchParams extracted from Next.js page props", async () => {
     const binder = createNextBinder({
       registry:    makeRegistry(),
@@ -383,10 +425,10 @@ describe("createStartBinder — import from typedrift/start", () => {
       relations: {},
     })
 
-    const binder   = createStartBinder({
+    const binder   = createStartBinder<AppServices, AppSession>({
       registry:    reg2,
       getServices: async () => ({ db }),
-      getSession:  async () => ({ userId: "u2", role: "member" }),
+      getSession:  async (): Promise<AppSession> => ({ userId: "u2", role: "member" }),
     })
     const PostData = Post.view({ title: true }).from(() => ({ id: "p1" }))
     await (binder.bind((_p: any) => null, { post: PostData }) as any)({

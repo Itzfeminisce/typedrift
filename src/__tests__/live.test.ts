@@ -236,6 +236,23 @@ describe("BoundViewDescriptor.live()", () => {
     })
     expect(typeof Bound).toBe("function")
   })
+
+  it("binder.bind() resolves live sources without unknown-source errors", async () => {
+    const binder   = makeBinder()
+    const PostData = Post.view({ title: true }).from(() => ({ id: "p1" }))
+
+    let received: any = null
+    const Bound = binder.bind((props: any) => {
+      received = props
+      return null
+    }, {
+      post: PostData.live(),
+    })
+
+    await (Bound as any)({ params: {}, searchParams: {} })
+
+    expect(received.post.title).toBe("Hello")
+  })
 })
 
 // ── binder.liveHandler() ──────────────────────────────────────────────────────

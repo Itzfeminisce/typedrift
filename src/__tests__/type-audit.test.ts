@@ -12,6 +12,7 @@ import {
   type ListResult,
   type StructuredError,
 } from "../index.js"
+import { createNextBinder, createNextLiveRoute } from "../next/index.js"
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -170,6 +171,79 @@ describe("InferProps type audit — edge cases", () => {
 
     const isArray: IsArray = true
     expect(isArray).toBe(true)
+  })
+
+  it("live descriptors are accepted by bind() and preserve prop shape", () => {
+    const LivePost = Post.view({ title: true })
+      .from(() => ({ id: "p1" }))
+      .live()
+
+    type LiveProps = InferProps<{ post: typeof LivePost }>
+    type IsPlainShape = LiveProps["post"] extends { title: string } ? true : false
+
+    const isPlainShape: IsPlainShape = true
+    expect(isPlainShape).toBe(true)
+  })
+
+  it("createNextLiveRoute accepts typed next binders without casts", () => {
+    const nextBinder = createNextBinder<AppServices, AppSession>({
+      registry:    makeRegistry(),
+      getServices: async () => ({ db }),
+      getSession:  async () => ({ userId: "u1", role: "member" }),
+    })
+
+    const route = createNextLiveRoute(nextBinder)
+    expect(typeof route).toBe("function")
+  })
+
+  it("batch helpers compose with registry service and session generics", () => {
+    const Tag = model("Tag", { id: field.id(), label: field.string() })
+    const TaggedPost = model("TaggedPost", {
+      id: field.id(),
+      authorId: field.string(),
+      tagId: field.string(),
+    })
+    const Project = model("Project", {
+      id: field.id(),
+      ownerId: field.string(),
+      owner: ref(User),
+      tags: ref(Tag).list(),
+    })
+
+    type ExtendedServices = AppServices & {
+      db: AppServices["db"] & {
+        postTags: Array<{ id: string; projectId: string; tagId: string }>
+        tags: Array<{ id: string; label: string }>
+      }
+    }
+
+    const registry = createRegistry<ExtendedServices, AppSession>()
+    registry.register(Project, {
+      relations: {
+        owner: batch.one("ownerId", async (ids, ctx) => {
+          const role: AppSession["role"] | undefined = ctx.session?.role
+          expect(role).toBeTypeOf("string")
+          return ctx.services.db.users.filter((user) => ids.includes(user.id))
+        }),
+        tags: batch.junction({
+          parentKey: "projectId",
+          childKey: "tagId",
+          fetchJunction: async (projectIds, ctx) => {
+            const userId: string | undefined = ctx.session?.userId
+            expect(userId).toBeTypeOf("string")
+            return ctx.services.db.postTags.filter((row) => projectIds.includes(row.projectId))
+          },
+          fetchTargets: async (tagIds, ctx) => {
+            const role: AppSession["role"] | undefined = ctx.session?.role
+            expect(role).toBeTypeOf("string")
+            return ctx.services.db.tags.filter((tag) => tagIds.includes(tag.id))
+          },
+        }),
+      },
+    })
+
+    expect(registry).toBeDefined()
+    void TaggedPost
   })
 
   // ── Runtime check: types produce correct runtime values ───────────────────

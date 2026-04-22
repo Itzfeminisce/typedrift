@@ -16,28 +16,28 @@ import type {
 
 // ── Fetch function types ──────────────────────────────────────────────────────
 
-export type BatchFetchFn<TServices, TResult> = (
+export type BatchFetchFn<TServices, TSession, TResult> = (
   ids:       string[],
-  ctx:       ResolverContext<TServices>,
+  ctx:       ResolverContext<TServices, TSession>,
   selection: SelectionTree,
 ) => Promise<TResult[]>
 
-export type JunctionFetchFn<TServices, TJunction> = (
+export type JunctionFetchFn<TServices, TSession, TJunction> = (
   parentIds: string[],
-  ctx:       ResolverContext<TServices>,
+  ctx:       ResolverContext<TServices, TSession>,
 ) => Promise<TJunction[]>
 
-export type TargetFetchFn<TServices, TTarget> = (
+export type TargetFetchFn<TServices, TSession, TTarget> = (
   childIds:  string[],
-  ctx:       ResolverContext<TServices>,
+  ctx:       ResolverContext<TServices, TSession>,
   selection: SelectionTree,
 ) => Promise<TTarget[]>
 
 // ── BatchResolver type — matches the existing RelationResolver contract ────────
 
-export type BatchResolver<TServices, TValue> = (
+export type BatchResolver<TServices, TSession, TValue> = (
   parents: AnyEntity[],
-  ctx:     ResolverContext<TServices>,
+  ctx:     ResolverContext<TServices, TSession>,
   meta:    RelationResolverMeta,
 ) => Promise<Map<string, TValue>>
 
@@ -55,10 +55,10 @@ export type BatchResolver<TServices, TValue> = (
  *   ctx.services.db.user.findMany({ where: { id: { in: ids } } })
  * )
  */
-function one<TServices, TResult extends AnyEntity>(
+function one<TServices, TSession = undefined, TResult extends AnyEntity = AnyEntity>(
   foreignKey: string,
-  fetchFn:    BatchFetchFn<TServices, TResult>,
-): BatchResolver<TServices, TResult | null> {
+  fetchFn:    BatchFetchFn<TServices, TSession, TResult>,
+): BatchResolver<TServices, TSession, TResult | null> {
   return async (parents, ctx, meta) => {
     if (parents.length === 0) return new Map()
 
@@ -105,10 +105,10 @@ function one<TServices, TResult extends AnyEntity>(
  *   ctx.services.db.comment.findMany({ where: { postId: { in: ids } } })
  * )
  */
-function many<TServices, TResult extends AnyEntity>(
+function many<TServices, TSession = undefined, TResult extends AnyEntity = AnyEntity>(
   foreignKey: string,
-  fetchFn:    BatchFetchFn<TServices, TResult>,
-): BatchResolver<TServices, TResult[]> {
+  fetchFn:    BatchFetchFn<TServices, TSession, TResult>,
+): BatchResolver<TServices, TSession, TResult[]> {
   return async (parents, ctx, meta) => {
     if (parents.length === 0) return new Map()
 
@@ -137,15 +137,20 @@ function many<TServices, TResult extends AnyEntity>(
 
 // ── batch.junction ────────────────────────────────────────────────────────────
 
-export type JunctionConfig<TServices, TJunction extends AnyEntity, TTarget extends AnyEntity> = {
+export type JunctionConfig<
+  TServices,
+  TSession,
+  TJunction extends AnyEntity,
+  TTarget extends AnyEntity,
+> = {
   /** FK on junction row pointing to parent */
   parentKey:     string
   /** FK on junction row pointing to child/target */
   childKey:      string
   /** Fetch junction rows for the given parent ids */
-  fetchJunction: JunctionFetchFn<TServices, TJunction>
+  fetchJunction: JunctionFetchFn<TServices, TSession, TJunction>
   /** Fetch target entities for the given child ids */
-  fetchTargets:  TargetFetchFn<TServices, TTarget>
+  fetchTargets:  TargetFetchFn<TServices, TSession, TTarget>
 }
 
 /**
@@ -164,11 +169,12 @@ export type JunctionConfig<TServices, TJunction extends AnyEntity, TTarget exten
  */
 function junction<
   TServices,
-  TJunction extends AnyEntity,
-  TTarget extends AnyEntity,
+  TSession = undefined,
+  TJunction extends AnyEntity = AnyEntity,
+  TTarget extends AnyEntity = AnyEntity,
 >(
-  config: JunctionConfig<TServices, TJunction, TTarget>,
-): BatchResolver<TServices, TTarget[]> {
+  config: JunctionConfig<TServices, TSession, TJunction, TTarget>,
+): BatchResolver<TServices, TSession, TTarget[]> {
   return async (parents, ctx, meta) => {
     if (parents.length === 0) return new Map()
 

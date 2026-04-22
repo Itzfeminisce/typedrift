@@ -40,7 +40,7 @@ describe("loadConfig()", () => {
     expect(Array.isArray(config.include)).toBe(true)
     expect(config.include.length).toBeGreaterThan(0)
     expect(typeof config.output).toBe("string")
-    expect(typeof config.defaultTtl === "undefined" || true).toBe(true)
+    expect(typeof config.tsconfig).toBe("string")
   })
 
   it("auto-detects registry file from known locations", async () => {

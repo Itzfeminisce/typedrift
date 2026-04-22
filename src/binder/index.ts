@@ -38,11 +38,13 @@ export type RawSource<TServices, TSession, TResult> = {
 // ── Source union ──────────────────────────────────────────────────────────────
 
 type AnyBoundView     = BoundViewDescriptor<any, any, any, any, any>
+type AnyLiveBoundView = LiveBoundViewDescriptor<any, any>
 type AnyRawSource     = RawSource<any, any, any>
 type AnyActionDef     = ActionDefinition<any, any, any, any>
 
 type DataSource<TServices, TSession> =
   | BoundViewDescriptor<any, any, any, any, any>
+  | LiveBoundViewDescriptor<any, any>
   | RawSource<TServices, TSession, any>
 
 // ── Action map types ──────────────────────────────────────────────────────────
@@ -74,6 +76,8 @@ type WrapWithBoundary<T, TMode extends ErrorBoundaryMode> =
 type InferDataSourceShape<T, TMode extends ErrorBoundaryMode = "throw"> =
   T extends BoundViewDescriptor<any, any, any, any, any>
     ? WrapWithBoundary<T["shape"], TMode>
+    : T extends LiveBoundViewDescriptor<any, any>
+      ? WrapWithBoundary<T["shape"], TMode>
     : T extends RawSource<any, any, infer TResult>
       ? WrapWithBoundary<TResult, TMode>
       : never
@@ -202,6 +206,12 @@ function normalizeBindContext(props: Record<string, unknown>): BindContext {
   if (props["request"] !== undefined) ctx.request = props["request"] as Request
   if (props["runtime"] !== undefined) ctx.runtime = props["runtime"]
   return ctx
+}
+
+function isBoundViewSource(
+  source: DataSource<any, any>,
+): source is AnyBoundView | AnyLiveBoundView {
+  return source.__type === "bound-view" || source.__type === "live-bound-view"
 }
 
 // ── makeActionCallable — wraps an action executor into a typed callable ───────
@@ -345,8 +355,16 @@ export function createBinder<TServices, TSession = undefined>(
       request:      resolverCtx.bind.request,
       session:      resolverCtx.session,
       services:     resolverCtx.services,
-      operation: source.__type === "bound-view"
-        ? { type: "view", model: (source as AnyBoundView).view.model.name, propKey: key }
+      operation: isBoundViewSource(source)
+        ? {
+            type: "view",
+            model: (
+              source.__type === "bound-view"
+                ? source.view.model.name
+                : source._view.model.name
+            ),
+            propKey: key,
+          }
         : { type: "raw", propKey: key },
     }
 
@@ -358,18 +376,30 @@ export function createBinder<TServices, TSession = undefined>(
           session:  resolverCtx.session,
         })
       }
-      if (source.__type === "bound-view") {
-        const bv      = source as AnyBoundView
-        const viewDef: ViewDescriptor<any, any> = bv.view
-        const input   = bv.from(resolverCtx.bind)
+      if (source.__type === "bound-view" || source.__type === "live-bound-view") {
+        const viewSource = source.__type === "bound-view"
+          ? {
+              view: source.view,
+              from: source.from,
+              nullable: source._nullable,
+              isList: source._isList,
+            }
+          : {
+              view: source._view,
+              from: source._from,
+              nullable: source._nullable,
+              isList: source._isList,
+            }
+        const viewDef: ViewDescriptor<any, any> = viewSource.view
+        const input   = viewSource.from(resolverCtx.bind)
         return executeView(
           viewDef.model.name,
           input as Record<string, unknown>,
           viewDef.selectionTree,
           resolverCtx,
           registry,
-          bv._nullable  as boolean,
-          bv._isList    as boolean,
+          viewSource.nullable,
+          viewSource.isList,
           viewDef.queryArgDefs,
           (viewDef as any).cacheConfig ?? null,
           dedupe,
@@ -404,8 +434,10 @@ export function createBinder<TServices, TSession = undefined>(
     const errorBoundary = bindOptions.errorBoundary ?? "throw"
 
     for (const source of Object.values(sources)) {
-      if (source.__type === "bound-view") {
-        registerRelationModels((source as AnyBoundView).view.model)
+      if (isBoundViewSource(source)) {
+        registerRelationModels(
+          source.__type === "bound-view" ? source.view.model : source._view.model
+        )
       }
     }
 

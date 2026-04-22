@@ -157,6 +157,16 @@ export type LiveBoundViewDescriptor<TShape, TInput> = {
   readonly options:   LiveOptions<TInput, TShape>
   /** The prop shape — identical to static view */
   readonly shape:     TShape
+  /** Internal view descriptor used by the binder runtime. */
+  readonly _view:     import("../view/index.js").ViewDescriptor<any, any>
+  /** Internal input resolver used by the binder runtime. */
+  readonly _from:     (ctx: BindContext) => TInput
+  /** Internal nullability flag used by the binder runtime. */
+  readonly _nullable: boolean
+  /** Internal list flag used by the binder runtime. */
+  readonly _isList:   boolean
+  /** Stable live key used by useLiveData() lookups. */
+  readonly _liveKey:  string
   /**
    * React hook — call inside the component to access live state.
    * Safe to call on static views — returns DEFAULT_LIVE_STATE.
