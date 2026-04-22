@@ -16,6 +16,33 @@ pnpm add typedrift
 
 Requires React 19+ and TypeScript 5.0+.
 
+### Local development with Next.js 16 + Turbopack
+
+If you consume a local Typedrift checkout via `pnpm link:` in a Next.js 16 app, Turbopack will not resolve that linked package by default when it lives outside the app root.
+
+Next.js requires the consumer app to expand `turbopack.root` to a shared parent directory:
+
+```ts
+// next.config.ts
+import path from "node:path"
+import type { NextConfig } from "next"
+
+const nextConfig: NextConfig = {
+  turbopack: {
+    root: path.join(__dirname, ".."),
+  },
+}
+
+export default nextConfig
+```
+
+That `root` value should point to the parent directory that contains both:
+
+- the Next.js app
+- the linked `typedrift` checkout
+
+If you do not want to widen the Turbopack root, use `file:../typedrift` instead of `link:../typedrift` for local validation.
+
 ## Agent skill
 
 Typedrift also ships an agent skill in this repo at `skills/typedrift`.
@@ -271,9 +298,11 @@ The framework adapter registers `/__typedrift/live` automatically.
 For explicit control:
 
 ```ts
-// app/api/__typedrift/live/route.ts  (Next.js)
+// app/api/typedrift/live/route.ts  (Next.js)
 export const GET = binder.liveHandler()
 ```
+
+For Next.js App Router, avoid underscore-prefixed route segments here. Folders such as `_typedrift` or `__typedrift` are treated as private and are not publicly routable.
 
 ### Live options
 

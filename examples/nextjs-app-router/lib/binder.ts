@@ -48,5 +48,5 @@ export const binder = createNextBinder<AppServices, AppSession>({
   ],
 })
 
-// Export the live SSE handler — wire into app/api/__typedrift/live/route.ts
+// Export the live SSE handler — wire into app/api/typedrift/live/route.ts
 export { binder }

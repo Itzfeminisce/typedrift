@@ -4,7 +4,7 @@
 // registry and binder state. Returns 404 in production.
 //
 // Usage (Next.js App Router):
-//   // app/api/__typedrift/route.ts
+//   // app/api/typedrift/route.ts
 //   import { devHandler } from "typedrift/dev"
 //   import { registry, binder } from "@/lib/binder"
 //   export const GET = devHandler({ registry, binder })

@@ -40,10 +40,17 @@ Typical usage:
 
 - page files usually `export default binder.bind(...)`
 - SSE route usually exports `GET = binder.liveHandler()`
+- recommended App Router path: `app/api/typedrift/live/route.ts`
 
 Cache default:
 
 - If `cache.defaultTtl` is provided without a `store`, the Next adapter uses `unstable_cache`
+
+Local linked-package note:
+
+- In Next.js 16 with Turbopack, `pnpm link:` dependencies outside the app root are not resolved by default.
+- When validating a local Typedrift checkout this way, set `turbopack.root` in the consumer app to the parent directory shared by the app and the linked package.
+- If that is not desirable, prefer `file:../typedrift` for local integration work.
 
 ## `createStartBinder`
 

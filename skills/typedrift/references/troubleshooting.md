@@ -43,6 +43,38 @@ Fix:
 - TanStack Start -> `typedrift/start`
 - custom integration -> `createBinder` from `typedrift`
 
+## Symptom: Next.js 16 + Turbopack cannot resolve a local `pnpm link:` Typedrift checkout
+
+Wrong direction:
+
+- assuming the package export map is broken before checking the consumer's Turbopack root
+- linking `../typedrift` outside the app root and expecting Turbopack to follow it automatically
+
+Fix:
+
+- in the consumer `next.config.ts`, set `turbopack.root` to the parent directory shared by both the app and the linked `typedrift` repo
+- if you do not want to expand the Turbopack root, use `file:../typedrift` instead of `link:../typedrift`
+
+Why:
+
+- Next.js 16 Turbopack only resolves files inside its configured root, and linked dependencies outside that root are skipped unless you opt in
+
+## Symptom: the Next live SSE route returns `404` even though `route.ts` exists
+
+Wrong direction:
+
+- placing the route at `app/api/__typedrift/live/route.ts`
+- assuming a double-underscore folder is a safe public namespace in App Router
+
+Fix:
+
+- place the route at `app/api/typedrift/live/route.ts`
+- if you really need a leading underscore in the URL, use a `%5F...` encoded segment explicitly and document it carefully
+
+Why:
+
+- Next.js App Router treats underscore-prefixed folders as private, so they are excluded from routing
+
 ## Symptom: prop types rewritten by hand
 
 Wrong direction:

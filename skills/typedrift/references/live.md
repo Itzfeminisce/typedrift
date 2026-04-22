@@ -90,7 +90,9 @@ Next.js example:
 export const GET = binder.liveHandler()
 ```
 
-The default route in the examples is `app/api/__typedrift/live/route.ts`.
+Use a public App Router segment such as `app/api/typedrift/live/route.ts`.
+
+Do not place the live route under `_typedrift` or `__typedrift` in `app/`, because underscore-prefixed folders are private in Next.js App Router and will not produce a public route.
 
 ## AI streaming
 

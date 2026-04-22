@@ -177,7 +177,7 @@ export type Binder<TServices, TSession = undefined> = {
    * /__typedrift/live automatically.
    *
    * @example
-   * // app/api/__typedrift/live/route.ts
+   * // app/api/typedrift/live/route.ts
    * export const GET = binder.liveHandler()
    */
   liveHandler(): (request: Request) => Promise<Response>

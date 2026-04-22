@@ -2,6 +2,14 @@
 
 Demonstrates the complete Typedrift stack on Next.js App Router.
 
+## Local repo validation
+
+If you wire this example or another Next.js 16 consumer app to a local Typedrift checkout with `pnpm link:`, set `turbopack.root` in the consumer app to the parent directory that contains both repos.
+
+Without that, Turbopack will usually fail to resolve `typedrift` and `typedrift/next` because linked dependencies outside the project root are not followed by default.
+
+If you want a simpler local setup, prefer `file:../typedrift`.
+
 ## What's shown
 
 - `lib/models.ts` — model + field + ref definitions
@@ -11,7 +19,7 @@ Demonstrates the complete Typedrift stack on Next.js App Router.
 - `lib/actions/post.ts` — action definitions (vote, create, update, delete, comment)
 - `app/posts/[postId]/page.tsx` — live view + useLiveData() + conditional actions
 - `app/feed/page.tsx` — list view + create action
-- `app/api/__typedrift/live/route.ts` — SSE endpoint for live views
+- `app/api/typedrift/live/route.ts` — SSE endpoint for live views
 
 ## Key patterns
 
@@ -43,7 +51,7 @@ onSuccess: (result) => ({
 
 Only three files are Next.js specific:
 1. `lib/binder.ts` — `createNextBinder` import
-2. `app/api/__typedrift/live/route.ts` — SSE route
+2. `app/api/typedrift/live/route.ts` — SSE route
 3. Default export convention (`export default binder.bind(...)`)
 
 Everything else is portable.

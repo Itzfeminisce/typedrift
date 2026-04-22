@@ -501,7 +501,7 @@ export function createNextBinder<TServices, TSession = undefined>(
 
   // Auto-register live endpoint
   // In Next.js App Router, developers add one file:
-  // app/api/__typedrift/live/route.ts → export const GET = binder.liveHandler()
+  // app/api/typedrift/live/route.ts → export const GET = binder.liveHandler()
   // The adapter exports a ready-made handler they can re-export
 
   return patchedBinder as any
@@ -509,10 +509,10 @@ export function createNextBinder<TServices, TSession = undefined>(
 
 /**
  * Ready-made Next.js route handler for the live SSE endpoint.
- * Place this in app/api/__typedrift/live/route.ts:
+ * Place this in app/api/typedrift/live/route.ts:
  *
  * @example
- * // app/api/__typedrift/live/route.ts
+ * // app/api/typedrift/live/route.ts
  * export { nextLiveRoute as GET } from "@/lib/binder"
  *
  * // lib/binder.ts
